@@ -153,7 +153,19 @@ const Catalogo = () => {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button className="w-full" onClick={() => toast.info("Carrinho em desenvolvimento")}>
+                  <Button className="w-full" onClick={() => {
+                    const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+                    cart.push({
+                      id: product.id + Date.now(),
+                      produto_id: product.id,
+                      nome: product.nome,
+                      preco: product.preco,
+                      quantidade: 1,
+                      imagem_url: product.imagem_url
+                    });
+                    localStorage.setItem("cart", JSON.stringify(cart));
+                    toast.success("Produto adicionado ao carrinho!");
+                  }}>
                     Adicionar ao Carrinho
                   </Button>
                 </CardFooter>
