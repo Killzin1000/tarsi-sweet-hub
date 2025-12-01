@@ -4,9 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Package, ShoppingCart, BarChart3, Settings, LogOut } from "lucide-react";
+import { Package, ShoppingCart, BarChart3, Settings, LogOut, Ticket, DollarSign, Box } from "lucide-react";
 import { toast } from "sonner";
 import ProductsManagement from "@/components/admin/ProductsManagement";
+import OrdersManagement from "@/components/admin/OrdersManagement";
+import CashRegister from "@/components/admin/CashRegister";
+import CouponsManagement from "@/components/admin/CouponsManagement";
+import StockManagement from "@/components/admin/StockManagement";
 
 const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -81,7 +85,7 @@ const AdminDashboard = () => {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs defaultValue="products" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="products">
               <Package className="h-4 w-4 mr-2" />
               Produtos
@@ -90,13 +94,21 @@ const AdminDashboard = () => {
               <ShoppingCart className="h-4 w-4 mr-2" />
               Pedidos
             </TabsTrigger>
+            <TabsTrigger value="cash">
+              <DollarSign className="h-4 w-4 mr-2" />
+              Caixa
+            </TabsTrigger>
+            <TabsTrigger value="coupons">
+              <Ticket className="h-4 w-4 mr-2" />
+              Cupons
+            </TabsTrigger>
+            <TabsTrigger value="stock">
+              <Box className="h-4 w-4 mr-2" />
+              Estoque
+            </TabsTrigger>
             <TabsTrigger value="reports">
               <BarChart3 className="h-4 w-4 mr-2" />
               Relatórios
-            </TabsTrigger>
-            <TabsTrigger value="settings">
-              <Settings className="h-4 w-4 mr-2" />
-              Configurações
             </TabsTrigger>
           </TabsList>
 
@@ -105,15 +117,19 @@ const AdminDashboard = () => {
           </TabsContent>
 
           <TabsContent value="orders">
-            <Card>
-              <CardHeader>
-                <CardTitle>Gestão de Pedidos</CardTitle>
-                <CardDescription>Acompanhe e gerencie todos os pedidos</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">Em desenvolvimento...</p>
-              </CardContent>
-            </Card>
+            <OrdersManagement />
+          </TabsContent>
+
+          <TabsContent value="cash">
+            <CashRegister />
+          </TabsContent>
+
+          <TabsContent value="coupons">
+            <CouponsManagement />
+          </TabsContent>
+
+          <TabsContent value="stock">
+            <StockManagement />
           </TabsContent>
 
           <TabsContent value="reports">
@@ -121,18 +137,6 @@ const AdminDashboard = () => {
               <CardHeader>
                 <CardTitle>Relatórios</CardTitle>
                 <CardDescription>Visualize estatísticas e relatórios</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">Em desenvolvimento...</p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="settings">
-            <Card>
-              <CardHeader>
-                <CardTitle>Configurações</CardTitle>
-                <CardDescription>Gerencie configurações do sistema</CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">Em desenvolvimento...</p>
