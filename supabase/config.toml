@@ -1,1 +1,4 @@
 project_id = "gydbuskhgzpeoqmqzeij"
+
+[functions.uber-direct]
+verify_jwt = false

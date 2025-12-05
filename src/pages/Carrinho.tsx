@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { ChefHat, Trash2, Plus, Minus } from "lucide-react";
+import { ChefHat, Trash2, Plus, Minus, Truck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -30,6 +30,9 @@ const Carrinho = () => {
   const [observacao, setObservacao] = useState("");
   const [horarioDesejado, setHorarioDesejado] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingFrete, setLoadingFrete] = useState(false);
+  const [taxaEntregaCalculada, setTaxaEntregaCalculada] = useState<number | null>(null);
+  const [uberQuoteId, setUberQuoteId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -49,6 +52,45 @@ const Carrinho = () => {
       if (profile?.endereco) {
         setEndereco(profile.endereco);
       }
+    }
+  };
+
+  const calcularFrete = async () => {
+    if (!endereco || endereco.length < 10) {
+      toast.error("Informe um endereço válido para calcular o frete");
+      return;
+    }
+
+    setLoadingFrete(true);
+    try {
+      const response = await supabase.functions.invoke('uber-direct', {
+        body: {
+          action: 'quote',
+          dropoff_address: endereco
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      const data = response.data;
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      // Uber returns fee in cents, convert to reais
+      const fee = data.fee ? data.fee / 100 : 15;
+      setTaxaEntregaCalculada(fee);
+      setUberQuoteId(data.id || null);
+      toast.success(`Frete calculado: R$ ${fee.toFixed(2)}`);
+    } catch (error) {
+      console.error("Erro ao calcular frete:", error);
+      // Use a default delivery fee if Uber API fails
+      setTaxaEntregaCalculada(15);
+      toast.error("Não foi possível calcular o frete via Uber. Taxa padrão aplicada: R$ 15,00");
+    } finally {
+      setLoadingFrete(false);
     }
   };
 
@@ -81,7 +123,7 @@ const Carrinho = () => {
   };
 
   const subtotal = cartItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
-  const taxaEntrega = tipoEntrega === "delivery" ? 5 : 0;
+  const taxaEntrega = tipoEntrega === "delivery" ? (taxaEntregaCalculada || 0) : 0;
   const total = subtotal + taxaEntrega;
 
   const handleFinalizarPedido = async () => {
@@ -92,6 +134,11 @@ const Carrinho = () => {
 
     if (tipoEntrega === "delivery" && !endereco) {
       toast.error("Informe o endereço de entrega");
+      return;
+    }
+
+    if (tipoEntrega === "delivery" && !taxaEntregaCalculada) {
+      toast.error("Calcule o frete antes de finalizar");
       return;
     }
 
@@ -145,6 +192,38 @@ const Carrinho = () => {
         forma_pagamento: formaPagamento,
         pedido_id: pedido.id
       });
+
+      // Create Uber delivery if delivery type is selected
+      if (tipoEntrega === "delivery") {
+        try {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("nome, telefone")
+            .eq("id", session.user.id)
+            .single();
+
+          const orderDetails = cartItems.map(item => `${item.quantidade}x ${item.nome}`).join(", ");
+          
+          const uberResponse = await supabase.functions.invoke('uber-direct', {
+            body: {
+              action: 'create',
+              dropoff_address: endereco,
+              dropoff_name: profile?.nome || "Cliente",
+              dropoff_phone: profile?.telefone || "+5511999999999",
+              order_details: `Pedido #${pedido.id.slice(0, 8)}: ${orderDetails}`,
+              quote_id: uberQuoteId
+            }
+          });
+
+          if (uberResponse.data && !uberResponse.data.error) {
+            console.log("Uber delivery created:", uberResponse.data);
+            toast.success("Entrega Uber Flash solicitada!");
+          }
+        } catch (uberError) {
+          console.error("Erro ao criar entrega Uber:", uberError);
+          // Don't fail the order if Uber fails
+        }
+      }
 
       localStorage.removeItem("cart");
       toast.success("Pedido realizado com sucesso!");
@@ -241,14 +320,44 @@ const Carrinho = () => {
                   </div>
 
                   {tipoEntrega === "delivery" && (
-                    <div>
-                      <Label htmlFor="endereco">Endereço</Label>
-                      <Input
-                        id="endereco"
-                        value={endereco}
-                        onChange={(e) => setEndereco(e.target.value)}
-                        placeholder="Rua, número, bairro"
-                      />
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="endereco">Endereço de Entrega</Label>
+                        <Input
+                          id="endereco"
+                          value={endereco}
+                          onChange={(e) => {
+                            setEndereco(e.target.value);
+                            setTaxaEntregaCalculada(null);
+                            setUberQuoteId(null);
+                          }}
+                          placeholder="Rua, número, bairro, cidade"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={calcularFrete}
+                        disabled={loadingFrete || !endereco}
+                      >
+                        {loadingFrete ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Calculando...
+                          </>
+                        ) : (
+                          <>
+                            <Truck className="h-4 w-4 mr-2" />
+                            Calcular Frete (Uber Flash)
+                          </>
+                        )}
+                      </Button>
+                      {taxaEntregaCalculada !== null && (
+                        <p className="text-sm text-muted-foreground">
+                          Frete via Uber Flash: <span className="font-semibold text-primary">R$ {taxaEntregaCalculada.toFixed(2)}</span>
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -314,9 +423,16 @@ const Carrinho = () => {
                   <Button
                     className="w-full"
                     onClick={handleFinalizarPedido}
-                    disabled={loading}
+                    disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
                   >
-                    {loading ? "Finalizando..." : "Finalizar Pedido"}
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Finalizando...
+                      </>
+                    ) : (
+                      "Finalizar Pedido"
+                    )}
                   </Button>
                 </CardContent>
               </Card>
