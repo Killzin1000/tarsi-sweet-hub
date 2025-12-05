@@ -12,6 +12,8 @@ import { z } from "zod";
 const emailSchema = z.string().email("Email inválido").max(255);
 const passwordSchema = z.string().min(6, "Senha deve ter no mínimo 6 caracteres");
 const nameSchema = z.string().min(2, "Nome deve ter no mínimo 2 caracteres").max(100);
+const telefoneSchema = z.string().min(10, "Telefone deve ter no mínimo 10 dígitos").max(20);
+const enderecoSchema = z.string().min(10, "Endereço deve ter no mínimo 10 caracteres").max(300);
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -21,6 +23,7 @@ const Auth = () => {
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [nascimento, setNascimento] = useState("");
+  const [endereco, setEndereco] = useState("");
   const navigate = useNavigate();
 
   const validateInputs = () => {
@@ -29,6 +32,8 @@ const Auth = () => {
       passwordSchema.parse(password);
       if (!isLogin) {
         nameSchema.parse(nome);
+        telefoneSchema.parse(telefone);
+        enderecoSchema.parse(endereco);
       }
       return true;
     } catch (error) {
@@ -76,6 +81,7 @@ const Auth = () => {
               nome: nome.trim(),
               telefone: telefone.trim(),
               nascimento: nascimento || null,
+              endereco: endereco.trim(),
             },
           },
         });
@@ -154,6 +160,19 @@ const Auth = () => {
                       type="date"
                       value={nascimento}
                       onChange={(e) => setNascimento(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="endereco">Endereço Completo *</Label>
+                    <Input
+                      id="endereco"
+                      type="text"
+                      placeholder="Rua, número, bairro, cidade"
+                      value={endereco}
+                      onChange={(e) => setEndereco(e.target.value)}
+                      required
+                      maxLength={300}
                     />
                   </div>
                 </>
