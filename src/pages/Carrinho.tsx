@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { ChefHat, Trash2, Plus, Minus, Truck, Loader2 } from "lucide-react";
+import { ChefHat, Trash2, Plus, Minus, Truck, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -22,17 +22,37 @@ interface CartItem {
   imagem_url?: string;
 }
 
+interface ViaCepResponse {
+  cep: string;
+  logradouro: string;
+  complemento: string;
+  bairro: string;
+  localidade: string;
+  uf: string;
+  erro?: boolean;
+}
+
 const Carrinho = () => {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [tipoEntrega, setTipoEntrega] = useState<"retirada" | "delivery">("retirada");
   const [formaPagamento, setFormaPagamento] = useState<PaymentMethod>("pix");
-  const [endereco, setEndereco] = useState("");
   const [observacao, setObservacao] = useState("");
   const [horarioDesejado, setHorarioDesejado] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingFrete, setLoadingFrete] = useState(false);
+  const [loadingCep, setLoadingCep] = useState(false);
   const [taxaEntregaCalculada, setTaxaEntregaCalculada] = useState<number | null>(null);
   const [uberQuoteId, setUberQuoteId] = useState<string | null>(null);
+  
+  // Address fields
+  const [cep, setCep] = useState("");
+  const [rua, setRua] = useState("");
+  const [numero, setNumero] = useState("");
+  const [complemento, setComplemento] = useState("");
+  const [bairro, setBairro] = useState("");
+  const [cidade, setCidade] = useState("");
+  const [estado, setEstado] = useState("");
+  
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -50,23 +70,77 @@ const Carrinho = () => {
         .single();
       
       if (profile?.endereco) {
-        setEndereco(profile.endereco);
+        // Try to parse the stored address
+        const parts = profile.endereco.split(", ");
+        if (parts.length >= 6) {
+          setRua(parts[0] || "");
+          setNumero(parts[1] || "");
+          setComplemento(parts[2] || "");
+          setBairro(parts[3] || "");
+          setCidade(parts[4] || "");
+          setEstado(parts[5] || "");
+          setCep(parts[6] || "");
+        }
       }
     }
   };
 
-  const calcularFrete = async () => {
-    if (!endereco || endereco.length < 10) {
-      toast.error("Informe um endereço válido para calcular o frete");
+  const buscarCep = async () => {
+    const cepLimpo = cep.replace(/\D/g, "");
+    
+    if (cepLimpo.length !== 8) {
+      toast.error("CEP deve ter 8 dígitos");
       return;
     }
+
+    setLoadingCep(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+      const data: ViaCepResponse = await response.json();
+
+      if (data.erro) {
+        toast.error("CEP não encontrado");
+        return;
+      }
+
+      setRua(data.logradouro);
+      setBairro(data.bairro);
+      setCidade(data.localidade);
+      setEstado(data.uf);
+      setTaxaEntregaCalculada(null);
+      toast.success("Endereço encontrado! Informe o número.");
+    } catch (error) {
+      toast.error("Erro ao buscar CEP");
+    } finally {
+      setLoadingCep(false);
+    }
+  };
+
+  const getEnderecoCompleto = () => {
+    const partes = [rua, numero, complemento, bairro, cidade, estado, cep].filter(Boolean);
+    return partes.join(", ");
+  };
+
+  const formatCep = (value: string) => {
+    const numbers = value.replace(/\D/g, "");
+    if (numbers.length <= 5) return numbers;
+    return `${numbers.slice(0, 5)}-${numbers.slice(5, 8)}`;
+  };
+
+  const calcularFrete = async () => {
+    if (!rua || !numero || !bairro || !cidade) {
+      toast.error("Preencha o endereço completo para calcular o frete");
+      return;
+    }
+
+    const enderecoCompleto = getEnderecoCompleto();
 
     setLoadingFrete(true);
     try {
       const response = await supabase.functions.invoke('uber-direct', {
         body: {
           action: 'quote',
-          dropoff_address: endereco
+          dropoff_address: enderecoCompleto
         }
       });
 
@@ -132,8 +206,8 @@ const Carrinho = () => {
       return;
     }
 
-    if (tipoEntrega === "delivery" && !endereco) {
-      toast.error("Informe o endereço de entrega");
+    if (tipoEntrega === "delivery" && (!rua || !numero || !bairro || !cidade)) {
+      toast.error("Preencha o endereço completo");
       return;
     }
 
@@ -152,6 +226,7 @@ const Carrinho = () => {
       }
 
       const pontosGanhos = Math.floor(total);
+      const enderecoCompleto = getEnderecoCompleto();
 
       const { data: pedido, error: pedidoError } = await supabase
         .from("pedidos")
@@ -160,7 +235,7 @@ const Carrinho = () => {
           total,
           taxa_entrega: taxaEntrega,
           forma_pagamento: formaPagamento,
-          endereco_entrega: tipoEntrega === "delivery" ? endereco : null,
+          endereco_entrega: tipoEntrega === "delivery" ? enderecoCompleto : null,
           horario_desejado: horarioDesejado || null,
           observacao: observacao || null,
           pontos_ganhos: pontosGanhos,
@@ -207,7 +282,7 @@ const Carrinho = () => {
           const uberResponse = await supabase.functions.invoke('uber-direct', {
             body: {
               action: 'create',
-              dropoff_address: endereco,
+              dropoff_address: enderecoCompleto,
               dropoff_name: profile?.nome || "Cliente",
               dropoff_phone: profile?.telefone || "+5511999999999",
               order_details: `Pedido #${pedido.id.slice(0, 8)}: ${orderDetails}`,
@@ -320,26 +395,126 @@ const Carrinho = () => {
                   </div>
 
                   {tipoEntrega === "delivery" && (
-                    <div className="space-y-3">
+                    <div className="space-y-3 border-t pt-4">
+                      <Label className="text-base font-semibold">Endereço de Entrega</Label>
+                      
                       <div>
-                        <Label htmlFor="endereco">Endereço de Entrega</Label>
+                        <Label htmlFor="cep" className="text-sm">CEP</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="cep"
+                            type="text"
+                            placeholder="00000-000"
+                            value={cep}
+                            onChange={(e) => {
+                              setCep(formatCep(e.target.value));
+                              setTaxaEntregaCalculada(null);
+                            }}
+                            maxLength={9}
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={buscarCep}
+                            disabled={loadingCep}
+                          >
+                            {loadingCep ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Search className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="rua" className="text-sm">Rua</Label>
                         <Input
-                          id="endereco"
-                          value={endereco}
+                          id="rua"
+                          type="text"
+                          placeholder="Nome da rua"
+                          value={rua}
                           onChange={(e) => {
-                            setEndereco(e.target.value);
+                            setRua(e.target.value);
                             setTaxaEntregaCalculada(null);
-                            setUberQuoteId(null);
                           }}
-                          placeholder="Rua, número, bairro, cidade"
                         />
                       </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label htmlFor="numero" className="text-sm">Número *</Label>
+                          <Input
+                            id="numero"
+                            type="text"
+                            placeholder="123"
+                            value={numero}
+                            onChange={(e) => {
+                              setNumero(e.target.value);
+                              setTaxaEntregaCalculada(null);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="complemento" className="text-sm">Complemento</Label>
+                          <Input
+                            id="complemento"
+                            type="text"
+                            placeholder="Apto..."
+                            value={complemento}
+                            onChange={(e) => setComplemento(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="bairro" className="text-sm">Bairro</Label>
+                        <Input
+                          id="bairro"
+                          type="text"
+                          placeholder="Bairro"
+                          value={bairro}
+                          onChange={(e) => {
+                            setBairro(e.target.value);
+                            setTaxaEntregaCalculada(null);
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <Label htmlFor="cidade" className="text-sm">Cidade</Label>
+                          <Input
+                            id="cidade"
+                            type="text"
+                            placeholder="Cidade"
+                            value={cidade}
+                            onChange={(e) => {
+                              setCidade(e.target.value);
+                              setTaxaEntregaCalculada(null);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="estado" className="text-sm">UF</Label>
+                          <Input
+                            id="estado"
+                            type="text"
+                            placeholder="SP"
+                            value={estado}
+                            onChange={(e) => setEstado(e.target.value.toUpperCase())}
+                            maxLength={2}
+                          />
+                        </div>
+                      </div>
+
                       <Button
                         type="button"
                         variant="outline"
                         className="w-full"
                         onClick={calcularFrete}
-                        disabled={loadingFrete || !endereco}
+                        disabled={loadingFrete || !rua || !numero}
                       >
                         {loadingFrete ? (
                           <>

@@ -6,25 +6,79 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { ChefHat } from "lucide-react";
+import { ChefHat, Search, Loader2 } from "lucide-react";
 import { z } from "zod";
 
 const emailSchema = z.string().email("Email inválido").max(255);
 const passwordSchema = z.string().min(6, "Senha deve ter no mínimo 6 caracteres");
 const nameSchema = z.string().min(2, "Nome deve ter no mínimo 2 caracteres").max(100);
 const telefoneSchema = z.string().min(10, "Telefone deve ter no mínimo 10 dígitos").max(20);
-const enderecoSchema = z.string().min(10, "Endereço deve ter no mínimo 10 caracteres").max(300);
+
+interface ViaCepResponse {
+  cep: string;
+  logradouro: string;
+  complemento: string;
+  bairro: string;
+  localidade: string;
+  uf: string;
+  erro?: boolean;
+}
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [loadingCep, setLoadingCep] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [nascimento, setNascimento] = useState("");
-  const [endereco, setEndereco] = useState("");
+  
+  // Address fields
+  const [cep, setCep] = useState("");
+  const [rua, setRua] = useState("");
+  const [numero, setNumero] = useState("");
+  const [complemento, setComplemento] = useState("");
+  const [bairro, setBairro] = useState("");
+  const [cidade, setCidade] = useState("");
+  const [estado, setEstado] = useState("");
+  
   const navigate = useNavigate();
+
+  const buscarCep = async () => {
+    const cepLimpo = cep.replace(/\D/g, "");
+    
+    if (cepLimpo.length !== 8) {
+      toast.error("CEP deve ter 8 dígitos");
+      return;
+    }
+
+    setLoadingCep(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+      const data: ViaCepResponse = await response.json();
+
+      if (data.erro) {
+        toast.error("CEP não encontrado");
+        return;
+      }
+
+      setRua(data.logradouro);
+      setBairro(data.bairro);
+      setCidade(data.localidade);
+      setEstado(data.uf);
+      toast.success("Endereço encontrado!");
+    } catch (error) {
+      toast.error("Erro ao buscar CEP");
+    } finally {
+      setLoadingCep(false);
+    }
+  };
+
+  const getEnderecoCompleto = () => {
+    const partes = [rua, numero, complemento, bairro, cidade, estado, cep].filter(Boolean);
+    return partes.join(", ");
+  };
 
   const validateInputs = () => {
     try {
@@ -33,7 +87,10 @@ const Auth = () => {
       if (!isLogin) {
         nameSchema.parse(nome);
         telefoneSchema.parse(telefone);
-        enderecoSchema.parse(endereco);
+        if (!rua || !numero || !bairro || !cidade || !estado || !cep) {
+          toast.error("Preencha todos os campos do endereço");
+          return false;
+        }
       }
       return true;
     } catch (error) {
@@ -71,6 +128,7 @@ const Auth = () => {
         navigate("/catalogo");
       } else {
         const redirectUrl = `${window.location.origin}/`;
+        const enderecoCompleto = getEnderecoCompleto();
         
         const { error } = await supabase.auth.signUp({
           email: email.trim(),
@@ -81,7 +139,7 @@ const Auth = () => {
               nome: nome.trim(),
               telefone: telefone.trim(),
               nascimento: nascimento || null,
-              endereco: endereco.trim(),
+              endereco: enderecoCompleto,
             },
           },
         });
@@ -103,6 +161,12 @@ const Auth = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatCep = (value: string) => {
+    const numbers = value.replace(/\D/g, "");
+    if (numbers.length <= 5) return numbers;
+    return `${numbers.slice(0, 5)}-${numbers.slice(5, 8)}`;
   };
 
   return (
@@ -129,7 +193,7 @@ const Auth = () => {
               {!isLogin && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="nome">Nome Completo</Label>
+                    <Label htmlFor="nome">Nome Completo *</Label>
                     <Input
                       id="nome"
                       type="text"
@@ -142,13 +206,14 @@ const Auth = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="telefone">Telefone</Label>
+                    <Label htmlFor="telefone">Telefone *</Label>
                     <Input
                       id="telefone"
                       type="tel"
                       placeholder="(00) 00000-0000"
                       value={telefone}
                       onChange={(e) => setTelefone(e.target.value)}
+                      required
                       maxLength={20}
                     />
                   </div>
@@ -163,23 +228,115 @@ const Auth = () => {
                     />
                   </div>
 
+                  <div className="border-t pt-4 mt-4">
+                    <Label className="text-base font-semibold">Endereço de Entrega</Label>
+                  </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="endereco">Endereço Completo *</Label>
+                    <Label htmlFor="cep">CEP *</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="cep"
+                        type="text"
+                        placeholder="00000-000"
+                        value={cep}
+                        onChange={(e) => setCep(formatCep(e.target.value))}
+                        maxLength={9}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={buscarCep}
+                        disabled={loadingCep}
+                      >
+                        {loadingCep ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Search className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="rua">Rua *</Label>
                     <Input
-                      id="endereco"
+                      id="rua"
                       type="text"
-                      placeholder="Rua, número, bairro, cidade"
-                      value={endereco}
-                      onChange={(e) => setEndereco(e.target.value)}
+                      placeholder="Nome da rua"
+                      value={rua}
+                      onChange={(e) => setRua(e.target.value)}
                       required
-                      maxLength={300}
                     />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="numero">Número *</Label>
+                      <Input
+                        id="numero"
+                        type="text"
+                        placeholder="123"
+                        value={numero}
+                        onChange={(e) => setNumero(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="complemento">Complemento</Label>
+                      <Input
+                        id="complemento"
+                        type="text"
+                        placeholder="Apto, bloco..."
+                        value={complemento}
+                        onChange={(e) => setComplemento(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="bairro">Bairro *</Label>
+                    <Input
+                      id="bairro"
+                      type="text"
+                      placeholder="Bairro"
+                      value={bairro}
+                      onChange={(e) => setBairro(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="cidade">Cidade *</Label>
+                      <Input
+                        id="cidade"
+                        type="text"
+                        placeholder="Cidade"
+                        value={cidade}
+                        onChange={(e) => setCidade(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="estado">UF *</Label>
+                      <Input
+                        id="estado"
+                        type="text"
+                        placeholder="SP"
+                        value={estado}
+                        onChange={(e) => setEstado(e.target.value.toUpperCase())}
+                        maxLength={2}
+                        required
+                      />
+                    </div>
                   </div>
                 </>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">Email *</Label>
                 <Input
                   id="email"
                   type="email"
@@ -192,7 +349,7 @@ const Auth = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Senha</Label>
+                <Label htmlFor="password">Senha *</Label>
                 <Input
                   id="password"
                   type="password"

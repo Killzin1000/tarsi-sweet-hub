@@ -42,36 +42,14 @@ async function getAccessToken(): Promise<string> {
     },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
-      scope: 'direct.organizations'
+      scope: 'eats.deliveries direct.organizations'
     })
   });
 
   if (!response.ok) {
     const error = await response.text();
     console.error("Token error:", error);
-    
-    // Try without scope if it fails
-    console.log("Trying without scope...");
-    const retryResponse = await fetch('https://login.uber.com/oauth/v2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${credentials}`,
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials'
-      })
-    });
-    
-    if (!retryResponse.ok) {
-      const retryError = await retryResponse.text();
-      console.error("Token retry error:", retryError);
-      throw new Error(`Failed to get access token: ${retryError}`);
-    }
-    
-    const retryData: UberToken = await retryResponse.json();
-    console.log("Access token obtained successfully (no scope)");
-    return retryData.access_token;
+    throw new Error(`Failed to get access token: ${error}`);
   }
 
   const data: UberToken = await response.json();
