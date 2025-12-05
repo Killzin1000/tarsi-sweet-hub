@@ -34,7 +34,23 @@ const Carrinho = () => {
 
   useEffect(() => {
     loadCart();
+    loadUserProfile();
   }, []);
+
+  const loadUserProfile = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("endereco")
+        .eq("id", session.user.id)
+        .single();
+      
+      if (profile?.endereco) {
+        setEndereco(profile.endereco);
+      }
+    }
+  };
 
   const loadCart = () => {
     const savedCart = localStorage.getItem("cart");
