@@ -5,11 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
-import { ChefHat, Award, Gift } from "lucide-react";
+import { ChefHat, Award, Gift, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"];
+
+// Interface atualizada para incluir os itens
+interface OrderItem {
+  quantidade: number;
+  produtos: {
+    nome: string;
+  } | null;
+}
 
 interface Order {
   id: string;
@@ -18,6 +26,7 @@ interface Order {
   created_at: string;
   forma_pagamento: string;
   endereco_entrega: string | null;
+  itens_pedido: OrderItem[]; // Adicionado array de itens
 }
 
 interface Profile {
@@ -47,11 +56,20 @@ const MeusPedidos = () => {
   };
 
   const loadData = async (userId: string) => {
+    console.log("Iniciando carregamento de dados para o usuário:", userId);
     try {
       const [ordersRes, profileRes] = await Promise.all([
         supabase
           .from("pedidos")
-          .select("*")
+          .select(`
+            *,
+            itens_pedido (
+              quantidade,
+              produtos (
+                nome
+              )
+            )
+          `)
           .eq("cliente_id", userId)
           .order("created_at", { ascending: false }),
         supabase
@@ -61,13 +79,21 @@ const MeusPedidos = () => {
           .single()
       ]);
 
-      if (ordersRes.error) throw ordersRes.error;
-      if (profileRes.error) throw profileRes.error;
+      if (ordersRes.error) {
+        console.error("Erro ao buscar pedidos:", ordersRes.error);
+        throw ordersRes.error;
+      }
+      if (profileRes.error) {
+        console.error("Erro ao buscar perfil:", profileRes.error);
+        throw profileRes.error;
+      }
 
-      setOrders(ordersRes.data || []);
+      console.log("Pedidos carregados com sucesso:", ordersRes.data);
+      // Casting forçado aqui pois o type gerado do supabase as vezes é estrito demais com joins profundos
+      setOrders(ordersRes.data as unknown as Order[] || []);
       setProfile(profileRes.data);
     } catch (error) {
-      console.error(error);
+      console.error("Erro geral no loadData:", error);
       toast.error("Erro ao carregar dados");
     } finally {
       setLoading(false);
@@ -139,11 +165,13 @@ const MeusPedidos = () => {
               </Card>
             ) : (
               orders.map(order => (
-                <Card key={order.id}>
-                  <CardHeader>
+                <Card key={order.id} className="overflow-hidden">
+                  <CardHeader className="bg-muted/30 pb-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <CardTitle className="text-lg">Pedido #{order.id.slice(0, 8)}</CardTitle>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          Pedido #{order.id.slice(0, 8)}
+                        </CardTitle>
                         <p className="text-sm text-muted-foreground">
                           {new Date(order.created_at).toLocaleDateString("pt-BR")} às{" "}
                           {new Date(order.created_at).toLocaleTimeString("pt-BR")}
@@ -154,21 +182,45 @@ const MeusPedidos = () => {
                       </Badge>
                     </div>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm text-muted-foreground">
-                          Pagamento: {order.forma_pagamento}
+                  <CardContent className="pt-4">
+                    {/* Lista de Produtos */}
+                    <div className="mb-4 space-y-2">
+                      <p className="text-sm font-semibold flex items-center gap-2 mb-2">
+                        <ShoppingBag className="h-4 w-4 text-primary" />
+                        Itens do Pedido:
+                      </p>
+                      <div className="bg-muted/20 rounded-lg p-3 space-y-1">
+                        {order.itens_pedido && order.itens_pedido.length > 0 ? (
+                          order.itens_pedido.map((item, idx) => (
+                            <div key={idx} className="text-sm flex justify-between items-center border-b border-border/50 last:border-0 pb-1 last:pb-0">
+                              <span className="text-muted-foreground">
+                                {item.quantidade}x {item.produtos?.nome || "Produto Indisponível"}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-sm text-muted-foreground italic">Detalhes dos itens indisponíveis</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-end border-t pt-4 mt-2">
+                      <div className="text-sm space-y-1">
+                        <p className="text-muted-foreground">
+                          <span className="font-medium text-foreground">Pagamento:</span> {order.forma_pagamento}
                         </p>
                         {order.endereco_entrega && (
-                          <p className="text-sm text-muted-foreground">
-                            Entrega: {order.endereco_entrega}
+                          <p className="text-muted-foreground max-w-[250px] truncate">
+                            <span className="font-medium text-foreground">Entrega:</span> {order.endereco_entrega}
                           </p>
                         )}
                       </div>
-                      <p className="text-2xl font-bold text-primary">
-                        R$ {order.total.toFixed(2)}
-                      </p>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground mb-1">Total</p>
+                        <p className="text-2xl font-bold text-primary">
+                          R$ {order.total.toFixed(2)}
+                        </p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
