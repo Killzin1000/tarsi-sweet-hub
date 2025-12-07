@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { ChefHat, Trash2, Plus, Minus, Truck, Loader2, Search } from "lucide-react";
+import { ChefHat, Trash2, Plus, Minus, Truck, Loader2, Search, ShoppingBag, ArrowLeft, MapPin, CreditCard, Clock, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -70,7 +70,6 @@ const Carrinho = () => {
         .single();
       
       if (profile?.endereco) {
-        // Try to parse the stored address
         const parts = profile.endereco.split(", ");
         if (parts.length >= 6) {
           setRua(parts[0] || "");
@@ -153,14 +152,12 @@ const Carrinho = () => {
         throw new Error(data.error);
       }
 
-      // Uber returns fee in cents, convert to reais
       const fee = data.fee ? data.fee / 100 : 15;
       setTaxaEntregaCalculada(fee);
       setUberQuoteId(data.id || null);
       toast.success(`Frete calculado: R$ ${fee.toFixed(2)}`);
     } catch (error) {
       console.error("Erro ao calcular frete:", error);
-      // Use a default delivery fee if Uber API fails
       setTaxaEntregaCalculada(15);
       toast.error("Não foi possível calcular o frete via Uber. Taxa padrão aplicada: R$ 15,00");
     } finally {
@@ -199,6 +196,7 @@ const Carrinho = () => {
   const subtotal = cartItems.reduce((sum, item) => sum + item.preco * item.quantidade, 0);
   const taxaEntrega = tipoEntrega === "delivery" ? (taxaEntregaCalculada || 0) : 0;
   const total = subtotal + taxaEntrega;
+  const totalItems = cartItems.reduce((sum, item) => sum + item.quantidade, 0);
 
   const handleFinalizarPedido = async () => {
     if (cartItems.length === 0) {
@@ -259,7 +257,6 @@ const Carrinho = () => {
 
       if (itensError) throw itensError;
 
-      // Registrar entrada no caixa
       await supabase.from("caixa").insert({
         tipo: "entrada",
         valor: total,
@@ -268,7 +265,6 @@ const Carrinho = () => {
         pedido_id: pedido.id
       });
 
-      // Create Uber delivery if delivery type is selected
       if (tipoEntrega === "delivery") {
         try {
           const { data: profile } = await supabase
@@ -296,7 +292,6 @@ const Carrinho = () => {
           }
         } catch (uberError) {
           console.error("Erro ao criar entrega Uber:", uberError);
-          // Don't fail the order if Uber fails
         }
       }
 
@@ -312,309 +307,459 @@ const Carrinho = () => {
   };
 
   return (
-    <div className="min-h-screen">
-      <header className="bg-card/80 backdrop-blur-sm border-b border-border">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <ChefHat className="h-8 w-8 text-primary" />
-            <span className="text-2xl font-bold text-primary">Tarsi Sweet</span>
+    <div className="min-h-screen bg-background pb-32 md:pb-8">
+      {/* Mobile-first header */}
+      <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
+        <div className="container mx-auto px-4 py-3 flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(-1)}
+            className="shrink-0"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold truncate">Meu Carrinho</h1>
+            <p className="text-xs text-muted-foreground">
+              {totalItems} {totalItems === 1 ? 'item' : 'itens'}
+            </p>
+          </div>
+          <Link to="/" className="shrink-0">
+            <ChefHat className="h-7 w-7 text-primary" />
           </Link>
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-4xl font-bold mb-8">Meu Carrinho</h1>
-
+      <div className="container mx-auto px-3 sm:px-4 py-4 max-w-4xl">
         {cartItems.length === 0 ? (
-          <Card>
+          <Card className="mt-8">
             <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground mb-4">Seu carrinho está vazio</p>
+              <ShoppingBag className="h-16 w-16 mx-auto text-muted-foreground/50 mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Carrinho vazio</h2>
+              <p className="text-muted-foreground mb-6 text-sm">
+                Adicione delícias ao seu carrinho
+              </p>
               <Link to="/catalogo">
-                <Button>Ver Catálogo</Button>
+                <Button size="lg" className="w-full sm:w-auto">
+                  Ver Catálogo
+                </Button>
               </Link>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-4">
+          <div className="space-y-4">
+            {/* Cart Items - Compact mobile cards */}
+            <div className="space-y-3">
               {cartItems.map(item => (
-                <Card key={item.id}>
-                  <CardContent className="p-6 flex gap-4">
-                    <div className="w-24 h-24 bg-muted rounded-lg flex-shrink-0" />
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{item.nome}</h3>
-                      <p className="text-primary font-bold">R$ {item.preco.toFixed(2)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={() => updateQuantity(item.id, -1)}
-                      >
-                        <Minus className="h-4 w-4" />
-                      </Button>
-                      <span className="w-8 text-center">{item.quantidade}</span>
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={() => updateQuantity(item.id, 1)}
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="destructive"
-                        onClick={() => removeItem(item.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                <Card key={item.id} className="overflow-hidden">
+                  <CardContent className="p-3 sm:p-4">
+                    <div className="flex gap-3">
+                      {/* Product image placeholder */}
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex-shrink-0 flex items-center justify-center">
+                        <ShoppingBag className="h-6 w-6 text-primary/40" />
+                      </div>
+                      
+                      {/* Product info */}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm sm:text-base truncate pr-2">
+                          {item.nome}
+                        </h3>
+                        <p className="text-primary font-bold text-base sm:text-lg mt-0.5">
+                          R$ {item.preco.toFixed(2)}
+                        </p>
+                        
+                        {/* Quantity controls - inline on mobile */}
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center gap-1.5 bg-muted/50 rounded-full p-0.5">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 rounded-full"
+                              onClick={() => updateQuantity(item.id, -1)}
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </Button>
+                            <span className="w-6 text-center text-sm font-medium">
+                              {item.quantidade}
+                            </span>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 rounded-full"
+                              onClick={() => updateQuantity(item.id, 1)}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => removeItem(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
 
-            <div>
+            {/* Delivery Type Selection */}
+            <Card>
+              <CardHeader className="pb-3 px-4 pt-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Truck className="h-4 w-4 text-primary" />
+                  Tipo de Entrega
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0">
+                <RadioGroup 
+                  value={tipoEntrega} 
+                  onValueChange={(v) => setTipoEntrega(v as any)}
+                  className="grid grid-cols-2 gap-2"
+                >
+                  <Label
+                    htmlFor="retirada"
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all text-sm ${
+                      tipoEntrega === "retirada" 
+                        ? "border-primary bg-primary/10 text-primary" 
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <RadioGroupItem value="retirada" id="retirada" className="sr-only" />
+                    <ShoppingBag className="h-4 w-4" />
+                    <span className="font-medium">Retirada</span>
+                  </Label>
+                  <Label
+                    htmlFor="delivery"
+                    className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all text-sm ${
+                      tipoEntrega === "delivery" 
+                        ? "border-primary bg-primary/10 text-primary" 
+                        : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <RadioGroupItem value="delivery" id="delivery" className="sr-only" />
+                    <Truck className="h-4 w-4" />
+                    <span className="font-medium">Delivery</span>
+                  </Label>
+                </RadioGroup>
+              </CardContent>
+            </Card>
+
+            {/* Delivery Address - Only show when delivery is selected */}
+            {tipoEntrega === "delivery" && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Finalizar Pedido</CardTitle>
+                <CardHeader className="pb-3 px-4 pt-4">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" />
+                    Endereço de Entrega
+                  </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                  {/* CEP */}
                   <div>
-                    <Label>Tipo de Entrega</Label>
-                    <RadioGroup value={tipoEntrega} onValueChange={(v) => setTipoEntrega(v as any)}>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="retirada" id="retirada" />
-                        <Label htmlFor="retirada">Retirada na loja</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="delivery" id="delivery" />
-                        <Label htmlFor="delivery">Delivery</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-                  {tipoEntrega === "delivery" && (
-                    <div className="space-y-3 border-t pt-4">
-                      <Label className="text-base font-semibold">Endereço de Entrega</Label>
-                      
-                      <div>
-                        <Label htmlFor="cep" className="text-sm">CEP</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="cep"
-                            type="text"
-                            placeholder="00000-000"
-                            value={cep}
-                            onChange={(e) => {
-                              setCep(formatCep(e.target.value));
-                              setTaxaEntregaCalculada(null);
-                            }}
-                            maxLength={9}
-                            className="flex-1"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={buscarCep}
-                            disabled={loadingCep}
-                          >
-                            {loadingCep ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Search className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="rua" className="text-sm">Rua</Label>
-                        <Input
-                          id="rua"
-                          type="text"
-                          placeholder="Nome da rua"
-                          value={rua}
-                          onChange={(e) => {
-                            setRua(e.target.value);
-                            setTaxaEntregaCalculada(null);
-                          }}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <Label htmlFor="numero" className="text-sm">Número *</Label>
-                          <Input
-                            id="numero"
-                            type="text"
-                            placeholder="123"
-                            value={numero}
-                            onChange={(e) => {
-                              setNumero(e.target.value);
-                              setTaxaEntregaCalculada(null);
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="complemento" className="text-sm">Complemento</Label>
-                          <Input
-                            id="complemento"
-                            type="text"
-                            placeholder="Apto..."
-                            value={complemento}
-                            onChange={(e) => setComplemento(e.target.value)}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="bairro" className="text-sm">Bairro</Label>
-                        <Input
-                          id="bairro"
-                          type="text"
-                          placeholder="Bairro"
-                          value={bairro}
-                          onChange={(e) => {
-                            setBairro(e.target.value);
-                            setTaxaEntregaCalculada(null);
-                          }}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2">
-                          <Label htmlFor="cidade" className="text-sm">Cidade</Label>
-                          <Input
-                            id="cidade"
-                            type="text"
-                            placeholder="Cidade"
-                            value={cidade}
-                            onChange={(e) => {
-                              setCidade(e.target.value);
-                              setTaxaEntregaCalculada(null);
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="estado" className="text-sm">UF</Label>
-                          <Input
-                            id="estado"
-                            type="text"
-                            placeholder="SP"
-                            value={estado}
-                            onChange={(e) => setEstado(e.target.value.toUpperCase())}
-                            maxLength={2}
-                          />
-                        </div>
-                      </div>
-
+                    <Label htmlFor="cep" className="text-xs text-muted-foreground">CEP</Label>
+                    <div className="flex gap-2 mt-1">
+                      <Input
+                        id="cep"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="00000-000"
+                        value={cep}
+                        onChange={(e) => {
+                          setCep(formatCep(e.target.value));
+                          setTaxaEntregaCalculada(null);
+                        }}
+                        maxLength={9}
+                        className="flex-1 h-11"
+                      />
                       <Button
                         type="button"
                         variant="outline"
-                        className="w-full"
-                        onClick={calcularFrete}
-                        disabled={loadingFrete || !rua || !numero}
+                        onClick={buscarCep}
+                        disabled={loadingCep}
+                        className="h-11 px-4"
                       >
-                        {loadingFrete ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            Calculando...
-                          </>
+                        {loadingCep ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          <>
-                            <Truck className="h-4 w-4 mr-2" />
-                            Calcular Frete (Uber Flash)
-                          </>
+                          <Search className="h-4 w-4" />
                         )}
                       </Button>
-                      {taxaEntregaCalculada !== null && (
-                        <p className="text-sm text-muted-foreground">
-                          Frete via Uber Flash: <span className="font-semibold text-primary">R$ {taxaEntregaCalculada.toFixed(2)}</span>
-                        </p>
-                      )}
                     </div>
-                  )}
-
-                  <div>
-                    <Label>Forma de Pagamento</Label>
-                    <RadioGroup value={formaPagamento} onValueChange={(v) => setFormaPagamento(v as PaymentMethod)}>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="pix" id="pix" />
-                        <Label htmlFor="pix">Pix</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="dinheiro" id="dinheiro" />
-                        <Label htmlFor="dinheiro">Dinheiro</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="cartao" id="cartao" />
-                        <Label htmlFor="cartao">Cartão</Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="pagamento_retirada" id="pagamento_retirada" />
-                        <Label htmlFor="pagamento_retirada">Pagar na retirada</Label>
-                      </div>
-                    </RadioGroup>
                   </div>
 
+                  {/* Street */}
                   <div>
-                    <Label htmlFor="horario">Horário Desejado (opcional)</Label>
+                    <Label htmlFor="rua" className="text-xs text-muted-foreground">Rua</Label>
                     <Input
-                      id="horario"
-                      type="datetime-local"
-                      value={horarioDesejado}
-                      onChange={(e) => setHorarioDesejado(e.target.value)}
+                      id="rua"
+                      type="text"
+                      placeholder="Nome da rua"
+                      value={rua}
+                      onChange={(e) => {
+                        setRua(e.target.value);
+                        setTaxaEntregaCalculada(null);
+                      }}
+                      className="mt-1 h-11"
                     />
                   </div>
 
+                  {/* Number and Complement - side by side */}
+                  <div className="grid grid-cols-5 gap-2">
+                    <div className="col-span-2">
+                      <Label htmlFor="numero" className="text-xs text-muted-foreground">Número *</Label>
+                      <Input
+                        id="numero"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="123"
+                        value={numero}
+                        onChange={(e) => {
+                          setNumero(e.target.value);
+                          setTaxaEntregaCalculada(null);
+                        }}
+                        className="mt-1 h-11"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <Label htmlFor="complemento" className="text-xs text-muted-foreground">Complemento</Label>
+                      <Input
+                        id="complemento"
+                        type="text"
+                        placeholder="Apto, Bloco..."
+                        value={complemento}
+                        onChange={(e) => setComplemento(e.target.value)}
+                        className="mt-1 h-11"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Neighborhood */}
                   <div>
-                    <Label htmlFor="obs">Observações</Label>
-                    <Textarea
-                      id="obs"
-                      value={observacao}
-                      onChange={(e) => setObservacao(e.target.value)}
-                      placeholder="Alguma observação especial?"
+                    <Label htmlFor="bairro" className="text-xs text-muted-foreground">Bairro</Label>
+                    <Input
+                      id="bairro"
+                      type="text"
+                      placeholder="Bairro"
+                      value={bairro}
+                      onChange={(e) => {
+                        setBairro(e.target.value);
+                        setTaxaEntregaCalculada(null);
+                      }}
+                      className="mt-1 h-11"
                     />
                   </div>
 
-                  <div className="border-t pt-4 space-y-2">
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-                      <span>R$ {subtotal.toFixed(2)}</span>
+                  {/* City and State */}
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="col-span-3">
+                      <Label htmlFor="cidade" className="text-xs text-muted-foreground">Cidade</Label>
+                      <Input
+                        id="cidade"
+                        type="text"
+                        placeholder="Cidade"
+                        value={cidade}
+                        onChange={(e) => {
+                          setCidade(e.target.value);
+                          setTaxaEntregaCalculada(null);
+                        }}
+                        className="mt-1 h-11"
+                      />
                     </div>
-                    {tipoEntrega === "delivery" && (
-                      <div className="flex justify-between">
-                        <span>Taxa de entrega</span>
-                        <span>R$ {taxaEntrega.toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-bold text-lg">
-                      <span>Total</span>
-                      <span className="text-primary">R$ {total.toFixed(2)}</span>
+                    <div>
+                      <Label htmlFor="estado" className="text-xs text-muted-foreground">UF</Label>
+                      <Input
+                        id="estado"
+                        type="text"
+                        placeholder="SP"
+                        value={estado}
+                        onChange={(e) => setEstado(e.target.value.toUpperCase())}
+                        maxLength={2}
+                        className="mt-1 h-11 text-center"
+                      />
                     </div>
                   </div>
 
+                  {/* Calculate shipping button */}
                   <Button
-                    className="w-full"
-                    onClick={handleFinalizarPedido}
-                    disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
+                    type="button"
+                    variant="outline"
+                    className="w-full h-11 mt-2"
+                    onClick={calcularFrete}
+                    disabled={loadingFrete || !rua || !numero}
                   >
-                    {loading ? (
+                    {loadingFrete ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Finalizando...
+                        Calculando...
                       </>
                     ) : (
-                      "Finalizar Pedido"
+                      <>
+                        <Truck className="h-4 w-4 mr-2" />
+                        Calcular Frete
+                      </>
                     )}
                   </Button>
+                  
+                  {taxaEntregaCalculada !== null && (
+                    <div className="bg-primary/10 rounded-lg p-3 text-center">
+                      <p className="text-sm text-muted-foreground">Frete via Uber Flash</p>
+                      <p className="text-lg font-bold text-primary">R$ {taxaEntregaCalculada.toFixed(2)}</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
-            </div>
+            )}
+
+            {/* Payment Method */}
+            <Card>
+              <CardHeader className="pb-3 px-4 pt-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-primary" />
+                  Forma de Pagamento
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0">
+                <RadioGroup 
+                  value={formaPagamento} 
+                  onValueChange={(v) => setFormaPagamento(v as PaymentMethod)}
+                  className="grid grid-cols-2 gap-2"
+                >
+                  {[
+                    { value: "pix", label: "Pix", icon: "📱" },
+                    { value: "dinheiro", label: "Dinheiro", icon: "💵" },
+                    { value: "cartao", label: "Cartão", icon: "💳" },
+                    { value: "pagamento_retirada", label: "Na retirada", icon: "🏪" },
+                  ].map((method) => (
+                    <Label
+                      key={method.value}
+                      htmlFor={method.value}
+                      className={`flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all text-sm ${
+                        formaPagamento === method.value 
+                          ? "border-primary bg-primary/10" 
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <RadioGroupItem value={method.value} id={method.value} className="sr-only" />
+                      <span className="text-lg">{method.icon}</span>
+                      <span className="font-medium">{method.label}</span>
+                    </Label>
+                  ))}
+                </RadioGroup>
+              </CardContent>
+            </Card>
+
+            {/* Schedule and Notes - Collapsible on mobile */}
+            <Card>
+              <CardHeader className="pb-3 px-4 pt-4">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" />
+                  Horário e Observações
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                <div>
+                  <Label htmlFor="horario" className="text-xs text-muted-foreground">
+                    Horário Desejado (opcional)
+                  </Label>
+                  <Input
+                    id="horario"
+                    type="datetime-local"
+                    value={horarioDesejado}
+                    onChange={(e) => setHorarioDesejado(e.target.value)}
+                    className="mt-1 h-11"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="obs" className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MessageSquare className="h-3 w-3" />
+                    Observações
+                  </Label>
+                  <Textarea
+                    id="obs"
+                    value={observacao}
+                    onChange={(e) => setObservacao(e.target.value)}
+                    placeholder="Ex: Sem lactose, entregar na portaria..."
+                    className="mt-1 min-h-[80px] resize-none"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Order Summary - Desktop only, mobile uses fixed footer */}
+            <Card className="hidden md:block">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal ({totalItems} itens)</span>
+                  <span>R$ {subtotal.toFixed(2)}</span>
+                </div>
+                {tipoEntrega === "delivery" && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Taxa de entrega</span>
+                    <span>R$ {taxaEntrega.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="border-t pt-3 flex justify-between font-bold text-lg">
+                  <span>Total</span>
+                  <span className="text-primary">R$ {total.toFixed(2)}</span>
+                </div>
+                <Button
+                  className="w-full h-12 text-base font-semibold mt-2"
+                  onClick={handleFinalizarPedido}
+                  disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Finalizando...
+                    </>
+                  ) : (
+                    "Finalizar Pedido"
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         )}
       </div>
+
+      {/* Fixed bottom bar for mobile - Only show when cart has items */}
+      {cartItems.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border p-4 md:hidden safe-area-bottom">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Total do pedido</p>
+              <p className="text-xl font-bold text-primary">R$ {total.toFixed(2)}</p>
+            </div>
+            {tipoEntrega === "delivery" && taxaEntrega > 0 && (
+              <div className="text-right text-xs text-muted-foreground">
+                <p>Subtotal: R$ {subtotal.toFixed(2)}</p>
+                <p>Entrega: R$ {taxaEntrega.toFixed(2)}</p>
+              </div>
+            )}
+          </div>
+          <Button
+            className="w-full h-12 text-base font-semibold"
+            onClick={handleFinalizarPedido}
+            disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Finalizando...
+              </>
+            ) : (
+              "Finalizar Pedido"
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
