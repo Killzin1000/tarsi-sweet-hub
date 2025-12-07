@@ -1,13 +1,20 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ShoppingBag, User, Phone, MapPin, CreditCard, MessageSquare } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 
 type OrderStatus = Database["public"]["Enums"]["order_status"];
+
+interface OrderItem {
+  quantidade: number;
+  produtos: {
+    nome: string;
+  } | null;
+}
 
 interface Order {
   id: string;
@@ -17,10 +24,12 @@ interface Order {
   forma_pagamento: string;
   endereco_entrega: string | null;
   observacao: string | null;
+  // Apenas "profiles" é suficiente, o Supabase infere a relação
   profiles: {
     nome: string;
     telefone: string | null;
   } | null;
+  itens_pedido: OrderItem[];
 }
 
 const OrdersManagement = () => {
@@ -31,7 +40,7 @@ const OrdersManagement = () => {
     loadOrders();
     
     const channel = supabase
-      .channel("orders-changes")
+      .channel("orders-changes-admin")
       .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
         loadOrders();
       })
@@ -44,18 +53,30 @@ const OrdersManagement = () => {
 
   const loadOrders = async () => {
     try {
+      // Ajustei a query para usar 'profiles' direto em vez do alias complexo
       const { data, error } = await supabase
         .from("pedidos")
         .select(`
           *,
-          profiles:cliente_id (nome, telefone)
+          profiles (
+            nome, 
+            telefone
+          ),
+          itens_pedido (
+            quantidade,
+            produtos (
+              nome
+            )
+          )
         `)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setOrders(data || []);
+
+      console.log("Pedidos Admin carregados:", data);
+      setOrders(data as unknown as Order[] || []);
     } catch (error) {
-      console.error(error);
+      console.error("Erro ao carregar pedidos:", error);
       toast.error("Erro ao carregar pedidos");
     } finally {
       setLoading(false);
@@ -70,7 +91,7 @@ const OrdersManagement = () => {
         .eq("id", orderId);
 
       if (error) throw error;
-      toast.success("Status atualizado com sucesso");
+      toast.success(`Status atualizado para ${newStatus}`);
       loadOrders();
     } catch (error) {
       console.error(error);
@@ -80,15 +101,25 @@ const OrdersManagement = () => {
 
   const getStatusColor = (status: OrderStatus) => {
     const colors = {
-      novo: "bg-blue-500",
-      aceito: "bg-purple-500",
-      producao: "bg-orange-500",
-      pronto: "bg-green-500",
-      a_caminho: "bg-cyan-500",
-      entregue: "bg-emerald-500",
-      cancelado: "bg-red-500"
+      novo: "bg-blue-500 hover:bg-blue-600",
+      aceito: "bg-purple-500 hover:bg-purple-600",
+      producao: "bg-orange-500 hover:bg-orange-600",
+      pronto: "bg-green-500 hover:bg-green-600",
+      a_caminho: "bg-cyan-500 hover:bg-cyan-600",
+      entregue: "bg-emerald-500 hover:bg-emerald-600",
+      cancelado: "bg-red-500 hover:bg-red-600"
     };
     return colors[status] || "bg-gray-500";
+  };
+
+  const statusLabels: Record<OrderStatus, string> = {
+    novo: "Novo",
+    aceito: "Aceito",
+    producao: "Em Produção",
+    pronto: "Pronto",
+    a_caminho: "A Caminho",
+    entregue: "Entregue",
+    cancelado: "Cancelado"
   };
 
   const statusOptions: OrderStatus[] = [
@@ -101,87 +132,137 @@ const OrdersManagement = () => {
     "cancelado"
   ];
 
-  const statusLabels: Record<OrderStatus, string> = {
-    novo: "Novo",
-    aceito: "Aceito",
-    producao: "Em Produção",
-    pronto: "Pronto",
-    a_caminho: "A Caminho",
-    entregue: "Entregue",
-    cancelado: "Cancelado"
-  };
-
   if (loading) {
-    return <div>Carregando pedidos...</div>;
+    return <div className="text-center py-8">Carregando painel...</div>;
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="border-none shadow-none">
+      <CardHeader className="px-0">
         <CardTitle>Gestão de Pedidos</CardTitle>
         <CardDescription>Acompanhe e gerencie todos os pedidos em tempo real</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 px-0">
         {orders.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">Nenhum pedido encontrado</p>
+          <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <ShoppingBag className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
+            <p className="text-muted-foreground mt-2">Nenhum pedido encontrado</p>
+          </div>
         ) : (
           orders.map(order => (
-            <Card key={order.id} className="border-2">
+            <Card key={order.id} className="border border-border/50 shadow-sm overflow-hidden">
+              <div className={`h-1 w-full ${getStatusColor(order.status)} opacity-80`} />
               <CardContent className="p-6">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-bold">Pedido #{order.id.slice(0, 8)}</h3>
-                      <Badge className={getStatusColor(order.status)}>
-                        {statusLabels[order.status]}
-                      </Badge>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Coluna da Esquerda: Detalhes do Cliente e Entrega */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-lg flex items-center gap-2">
+                        Pedido #{order.id.slice(0, 8)}
+                      </h3>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(order.created_at).toLocaleString("pt-BR")}
+                      </span>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(order.created_at).toLocaleString("pt-BR")}
-                    </p>
-                    <p className="text-sm mt-2">
-                      <strong>Cliente:</strong> {order.profiles?.nome || "N/A"}
-                    </p>
-                    {order.profiles?.telefone && (
-                      <p className="text-sm">
-                        <strong>Telefone:</strong> {order.profiles.telefone}
-                      </p>
-                    )}
-                    <p className="text-sm">
-                      <strong>Pagamento:</strong> {order.forma_pagamento}
-                    </p>
-                    {order.endereco_entrega && (
-                      <p className="text-sm">
-                        <strong>Endereço:</strong> {order.endereco_entrega}
-                      </p>
-                    )}
-                    {order.observacao && (
-                      <p className="text-sm">
-                        <strong>Obs:</strong> {order.observacao}
-                      </p>
-                    )}
+
+                    <div className="bg-muted/30 p-4 rounded-lg space-y-2 text-sm">
+                      <div className="flex items-start gap-2">
+                        <User className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-semibold block">Cliente:</span>
+                          <span className="text-muted-foreground font-medium">
+                            {order.profiles?.nome || "Nome não disponível"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {order.profiles?.telefone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4 text-primary shrink-0" />
+                          <span className="text-muted-foreground">{order.profiles.telefone}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-start gap-2">
+                        <CreditCard className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-semibold block">Pagamento:</span>
+                          <span className="text-muted-foreground capitalize">
+                            {order.forma_pagamento.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {order.endereco_entrega && (
+                        <div className="flex items-start gap-2">
+                          <MapPin className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                          <div>
+                            <span className="font-semibold block">Entrega:</span>
+                            <span className="text-muted-foreground">{order.endereco_entrega}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {order.observacao && (
+                        <div className="flex items-start gap-2 pt-2 border-t border-border/50">
+                          <MessageSquare className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
+                          <div>
+                            <span className="font-semibold block text-orange-600">Observação:</span>
+                            <span className="text-muted-foreground italic">"{order.observacao}"</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col justify-between items-end">
-                    <p className="text-3xl font-bold text-primary">
-                      R$ {order.total.toFixed(2)}
-                    </p>
-                    <div className="w-full max-w-xs">
-                      <Select
-                        value={order.status}
-                        onValueChange={(value) => updateOrderStatus(order.id, value as OrderStatus)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {statusOptions.map(status => (
-                            <SelectItem key={status} value={status}>
-                              {statusLabels[status]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  {/* Coluna da Direita: Itens e Ações */}
+                  <div className="flex flex-col justify-between space-y-4">
+                    <div className="bg-background border rounded-lg p-4">
+                      <p className="font-semibold mb-3 flex items-center gap-2 text-sm uppercase tracking-wide text-muted-foreground">
+                        <ShoppingBag className="h-4 w-4" />
+                        Itens do Pedido
+                      </p>
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                        {order.itens_pedido && order.itens_pedido.length > 0 ? (
+                          order.itens_pedido.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-sm py-1 border-b border-border/30 last:border-0">
+                              <span className="font-medium text-foreground">
+                                {item.produtos?.nome || "Produto Removido"}
+                              </span>
+                              <Badge variant="secondary" className="ml-2">x{item.quantidade}</Badge>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">Nenhum item registrado</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t">
+                      <div className="text-center sm:text-left">
+                        <p className="text-sm text-muted-foreground">Total do Pedido</p>
+                        <p className="text-3xl font-bold text-primary">
+                          R$ {order.total.toFixed(2)}
+                        </p>
+                      </div>
+                      
+                      <div className="w-full sm:w-auto min-w-[200px]">
+                        <Select
+                          value={order.status || "novo"}
+                          onValueChange={(value) => updateOrderStatus(order.id, value as OrderStatus)}
+                        >
+                          <SelectTrigger className={`${getStatusColor(order.status)} text-white border-none h-11`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statusOptions.map(status => (
+                              <SelectItem key={status} value={status}>
+                                {statusLabels[status]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 </div>
