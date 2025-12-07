@@ -3,7 +3,7 @@ import { ShoppingBag, Heart, Award, ChefHat } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import heroBanner from "@/assets/hero-banner.jpg";
+import ParallaxHero from "@/components/ParallaxHero";
 
 const Index = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -23,7 +23,7 @@ const Index = () => {
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="bg-card/80 backdrop-blur-sm border-b border-border sticky top-0 z-50">
+      <header className="bg-card/80 backdrop-blur-sm border-b border-border fixed top-0 left-0 right-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
             <ChefHat className="h-8 w-8 text-primary" />
@@ -53,41 +53,8 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative container mx-auto px-4 py-20 text-center">
-        <div className="absolute inset-0 opacity-20 rounded-3xl overflow-hidden">
-          <img 
-            src={heroBanner} 
-            alt="Delicious artisanal sweets" 
-            className="w-full h-full object-cover"
-          />
-        </div>
-        <div className="relative max-w-3xl mx-auto">
-          <h1 className="text-5xl md:text-6xl font-bold text-foreground mb-6 text-shadow-soft">
-            Doces que encantam,
-            <br />
-            <span className="text-primary">sabores que apaixonam</span>
-          </h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            Descubra nossa coleção artesanal de doces feitos com amor e ingredientes selecionados.
-            Cada mordida é uma experiência única.
-          </p>
-          <div className="flex gap-4 justify-center flex-wrap">
-            <Link to="/catalogo">
-              <Button size="lg" className="text-lg px-8">
-                Ver Catálogo
-              </Button>
-            </Link>
-            {!isAuthenticated && (
-              <Link to="/auth">
-                <Button size="lg" variant="outline" className="text-lg px-8">
-                  Criar Conta
-                </Button>
-              </Link>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* Parallax Hero Section */}
+      <ParallaxHero isAuthenticated={isAuthenticated} />
 
       {/* Features */}
       <section className="container mx-auto px-4 py-16">
