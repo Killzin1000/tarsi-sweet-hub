@@ -9,18 +9,19 @@ const UBER_CLIENT_ID = Deno.env.get('UBER_CLIENT_ID');
 const UBER_CLIENT_SECRET = Deno.env.get('UBER_CLIENT_SECRET');
 const UBER_CUSTOMER_ID = Deno.env.get('UBER_CUSTOMER_ID');
 
-// Store address - update this with your actual store address
+// Endereço da Loja
 const STORE_ADDRESS = {
-  street_address: ["Rua Exemplo, 123"],
+  street_address: ["Rua dos Argentinos, 127"],
   city: "São Paulo",
   state: "SP",
-  zip_code: "01310-100",
+  zip_code: "03878-020",
   country: "BR"
 };
 
+// Coordenadas
 const STORE_LOCATION = {
-  latitude: -23.5505,
-  longitude: -46.6333
+  latitude: -23.50941175264895, 
+  longitude: -46.49309144575759
 };
 
 interface UberToken {
@@ -28,10 +29,23 @@ interface UberToken {
   expires_in: number;
 }
 
+// Função auxiliar para formatar telefone para E.164 (+55...)
+function formatPhoneNumber(phone: string): string {
+  // Remove tudo que não é número
+  let cleaned = phone.replace(/\D/g, '');
+  
+  // Se não tiver o código do país (55) e tiver 10 ou 11 dígitos, adiciona
+  if (cleaned.length >= 10 && cleaned.length <= 11) {
+    cleaned = '55' + cleaned;
+  }
+  
+  // Adiciona o + na frente se não tiver
+  return `+${cleaned}`;
+}
+
 async function getAccessToken(): Promise<string> {
   console.log("Getting Uber access token...");
   
-  // Use Basic Auth header for client credentials
   const credentials = btoa(`${UBER_CLIENT_ID}:${UBER_CLIENT_SECRET}`);
   
   const response = await fetch('https://login.uber.com/oauth/v2/token', {
@@ -53,7 +67,6 @@ async function getAccessToken(): Promise<string> {
   }
 
   const data: UberToken = await response.json();
-  console.log("Access token obtained successfully");
   return data.access_token;
 }
 
@@ -95,20 +108,24 @@ async function createDelivery(
 ) {
   console.log("Creating delivery...");
   
+  // Formata o telefone do cliente
+  const formattedDropoffPhone = formatPhoneNumber(dropoffPhone);
+  
   const deliveryData: any = {
     pickup_name: "Tarsi Sweet",
     pickup_address: JSON.stringify(STORE_ADDRESS),
-    pickup_phone_number: "+5511999999999", // Update with actual store phone
+    pickup_phone_number: "+5511980732523",
     pickup_latitude: STORE_LOCATION.latitude,
     pickup_longitude: STORE_LOCATION.longitude,
     dropoff_name: dropoffName,
     dropoff_address: dropoffAddress,
-    dropoff_phone_number: dropoffPhone,
+    dropoff_phone_number: formattedDropoffPhone, // Usa o telefone formatado
     manifest_items: [
       {
         name: "Doces Tarsi Sweet",
         quantity: 1,
         size: "small",
+        weight: 1000,
         dimensions: {
           length: 30,
           height: 20,
@@ -128,7 +145,6 @@ async function createDelivery(
     }
   };
 
-  // Use quote_id if available for better pricing
   if (quoteId) {
     deliveryData.quote_id = quoteId;
   }
@@ -153,58 +169,31 @@ async function createDelivery(
   return data;
 }
 
+// ... Resto das funções auxiliares (getDeliveryStatus, cancelDelivery) mantidas iguais ...
 async function getDeliveryStatus(accessToken: string, deliveryId: string) {
-  console.log("Getting delivery status for:", deliveryId);
-  
   const response = await fetch(`https://api.uber.com/v1/customers/${UBER_CUSTOMER_ID}/deliveries/${deliveryId}`, {
     method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    }
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    console.error("Status error:", error);
-    throw new Error(`Failed to get delivery status: ${error}`);
-  }
-
-  const data = await response.json();
-  console.log("Delivery status:", JSON.stringify(data));
-  return data;
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json();
 }
 
 async function cancelDelivery(accessToken: string, deliveryId: string) {
-  console.log("Cancelling delivery:", deliveryId);
-  
   const response = await fetch(`https://api.uber.com/v1/customers/${UBER_CUSTOMER_ID}/deliveries/${deliveryId}/cancel`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    }
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    console.error("Cancel error:", error);
-    throw new Error(`Failed to cancel delivery: ${error}`);
-  }
-
-  const data = await response.json();
-  console.log("Delivery cancelled:", JSON.stringify(data));
-  return data;
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json();
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Validate environment variables
     if (!UBER_CLIENT_ID || !UBER_CLIENT_SECRET || !UBER_CUSTOMER_ID) {
       throw new Error("Missing Uber API credentials");
     }
@@ -212,19 +201,14 @@ serve(async (req) => {
     const { action, ...params } = await req.json();
     console.log("Action:", action, "Params:", JSON.stringify(params));
 
-    // Get access token
     const accessToken = await getAccessToken();
-
     let result;
 
     switch (action) {
       case 'quote':
-        // Get delivery quote/estimate
         result = await getDeliveryQuote(accessToken, params.dropoff_address);
         break;
-
       case 'create':
-        // Create a new delivery
         result = await createDelivery(
           accessToken,
           params.dropoff_address,
@@ -234,17 +218,12 @@ serve(async (req) => {
           params.quote_id
         );
         break;
-
       case 'status':
-        // Get delivery status
         result = await getDeliveryStatus(accessToken, params.delivery_id);
         break;
-
       case 'cancel':
-        // Cancel a delivery
         result = await cancelDelivery(accessToken, params.delivery_id);
         break;
-
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -260,10 +239,7 @@ serve(async (req) => {
         error: error instanceof Error ? error.message : 'Unknown error',
         success: false 
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

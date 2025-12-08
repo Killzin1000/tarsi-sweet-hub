@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ChefHat, Trash2, Plus, Minus, Truck, Loader2, Search, ShoppingBag, ArrowLeft, MapPin, CreditCard, Clock, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
+import PaymentBrick from "@/components/payment/PaymentBrick";
 
 type PaymentMethod = Database["public"]["Enums"]["payment_method"];
 
@@ -198,7 +199,9 @@ const Carrinho = () => {
   const total = subtotal + taxaEntrega;
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantidade, 0);
 
-  const handleFinalizarPedido = async () => {
+  // Função principal de finalização
+  // Aceita paymentId opcional (vindo do Mercado Pago)
+  const handleFinalizarPedido = async (paymentId?: string) => {
     if (cartItems.length === 0) {
       toast.error("Carrinho vazio");
       return;
@@ -225,6 +228,11 @@ const Carrinho = () => {
 
       const pontosGanhos = Math.floor(total);
       const enderecoCompleto = getEnderecoCompleto();
+      
+      // Se veio um ID de pagamento, adicionamos à observação
+      const obsFinal = paymentId 
+        ? `${observacao ? observacao + ' | ' : ''}Pago Online (MP ID: ${paymentId})`
+        : observacao;
 
       const { data: pedido, error: pedidoError } = await supabase
         .from("pedidos")
@@ -235,7 +243,7 @@ const Carrinho = () => {
           forma_pagamento: formaPagamento,
           endereco_entrega: tipoEntrega === "delivery" ? enderecoCompleto : null,
           horario_desejado: horarioDesejado || null,
-          observacao: observacao || null,
+          observacao: obsFinal || null,
           pontos_ganhos: pontosGanhos,
           status: "novo"
         })
@@ -305,6 +313,8 @@ const Carrinho = () => {
       setLoading(false);
     }
   };
+
+  const isOnlinePayment = formaPagamento === "cartao" || formaPagamento === "pix";
 
   return (
     <div className="min-h-screen bg-background pb-32 md:pb-8">
@@ -633,8 +643,8 @@ const Carrinho = () => {
                 >
                   {[
                     { value: "pix", label: "Pix", icon: "📱" },
-                    { value: "dinheiro", label: "Dinheiro", icon: "💵" },
                     { value: "cartao", label: "Cartão", icon: "💳" },
+                    { value: "dinheiro", label: "Dinheiro", icon: "💵" },
                     { value: "pagamento_retirada", label: "Na retirada", icon: "🏪" },
                   ].map((method) => (
                     <Label
@@ -692,8 +702,8 @@ const Carrinho = () => {
               </CardContent>
             </Card>
 
-            {/* Order Summary - Desktop only, mobile uses fixed footer */}
-            <Card className="hidden md:block">
+            {/* Finalization Section */}
+            <Card className="mb-20 md:mb-0 border-t-4 border-primary">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal ({totalItems} itens)</span>
@@ -705,61 +715,47 @@ const Carrinho = () => {
                     <span>R$ {taxaEntrega.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="border-t pt-3 flex justify-between font-bold text-lg">
+                <div className="border-t pt-3 flex justify-between font-bold text-lg mb-4">
                   <span>Total</span>
                   <span className="text-primary">R$ {total.toFixed(2)}</span>
                 </div>
-                <Button
-                  className="w-full h-12 text-base font-semibold mt-2"
-                  onClick={handleFinalizarPedido}
-                  disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                      Finalizando...
-                    </>
-                  ) : (
-                    "Finalizar Pedido"
-                  )}
-                </Button>
+
+                {/* Conditional Payment/Finish Button */}
+                {isOnlinePayment ? (
+                  <div className="border rounded-xl p-4 bg-muted/20">
+                    <h3 className="font-bold mb-4 text-center text-primary flex items-center justify-center gap-2">
+                      <CreditCard className="h-5 w-5" />
+                      Pagamento Seguro
+                    </h3>
+                    <PaymentBrick 
+                      amount={total} 
+                      customerEmail={`test_user_${Math.floor(Math.random() * 100000)}@test.com`}
+                      onSuccess={(paymentId) => {
+                        handleFinalizarPedido(paymentId); 
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <Button
+                    className="w-full h-12 text-base font-semibold"
+                    onClick={() => handleFinalizarPedido()}
+                    disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                        Finalizando...
+                      </>
+                    ) : (
+                      "Finalizar Pedido"
+                    )}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           </div>
         )}
       </div>
-
-      {/* Fixed bottom bar for mobile - Only show when cart has items */}
-      {cartItems.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border p-4 md:hidden safe-area-bottom">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Total do pedido</p>
-              <p className="text-xl font-bold text-primary">R$ {total.toFixed(2)}</p>
-            </div>
-            {tipoEntrega === "delivery" && taxaEntrega > 0 && (
-              <div className="text-right text-xs text-muted-foreground">
-                <p>Subtotal: R$ {subtotal.toFixed(2)}</p>
-                <p>Entrega: R$ {taxaEntrega.toFixed(2)}</p>
-              </div>
-            )}
-          </div>
-          <Button
-            className="w-full h-12 text-base font-semibold"
-            onClick={handleFinalizarPedido}
-            disabled={loading || (tipoEntrega === "delivery" && !taxaEntregaCalculada)}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                Finalizando...
-              </>
-            ) : (
-              "Finalizar Pedido"
-            )}
-          </Button>
-        </div>
-      )}
     </div>
   );
 };
