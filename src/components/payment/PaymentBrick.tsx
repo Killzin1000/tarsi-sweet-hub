@@ -4,19 +4,18 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useState } from 'react';
 
-// Inicializa com sua Public Key de TESTE
-// Garanta que esta é a chave TEST- do seu painel
+// Chave Pública de Teste
 initMercadoPago('TEST-9cbc5fc7-7d5e-4371-ad3a-2965b7bc2b02', {
   locale: 'pt-BR'
 });
 
 interface PaymentBrickProps {
   amount: number;
-  onSuccess: (paymentId: string) => void;
+  onSuccess: (data: { id: string; status: string; qrCode?: string; qrCodeBase64?: string }) => void;
   customerEmail?: string;
 }
 
-const PaymentBrick = ({ amount, onSuccess, customerEmail = "test@testuser.com" }: PaymentBrickProps) => {
+const PaymentBrick = ({ amount, onSuccess, customerEmail = "cliente@tarsisweet.com" }: PaymentBrickProps) => {
   const [processing, setProcessing] = useState(false);
 
   const initialization = {
@@ -25,22 +24,18 @@ const PaymentBrick = ({ amount, onSuccess, customerEmail = "test@testuser.com" }
 
   const customization = {
     paymentMethods: {
-      // ✅ Habilitados
-      creditCard: "all",      // Aceita todas as bandeiras de crédito
-      bankTransfer: "all",    // Aceita Pix
-      
-      // ❌ Desabilitados
-      debitCard: [],          // Remove débito
-      ticket: [],             // Remove boleto
-      atm: [],                // Remove pagamento em caixa eletrônico
-      
-      maxInstallments: 1      // Mantendo limite de parcelas (ajuste se quiser mais)
+      creditCard: "all",
+      bankTransfer: "all",
+      debitCard: [],
+      ticket: [],
+      atm: [],
+      maxInstallments: 3
     },
     visual: {
       style: {
         theme: 'default' as const, 
         customVariables: {
-          baseColor: '#E68AB4', // Rosa Tarsi Sweet
+          baseColor: '#E68AB4',
         }
       },
       hidePaymentButton: false,
@@ -49,7 +44,7 @@ const PaymentBrick = ({ amount, onSuccess, customerEmail = "test@testuser.com" }
   };
 
   const onSubmit = async ({ formData }: any) => {
-    setProcessing(true);
+    // Não ativamos setProcessing(true) visualmente para não desmontar o brick antes da hora
     console.log("🚀 Enviando dados para o Backend...");
     
     try {
@@ -68,38 +63,31 @@ const PaymentBrick = ({ amount, onSuccess, customerEmail = "test@testuser.com" }
       if (error) throw new Error(error.message);
       if (data.error) throw new Error(data.error);
 
-      console.log("Status do Pagamento:", data.status);
+      // Dados do Pix (se existirem)
+      const qrCode = data.point_of_interaction?.transaction_data?.qr_code;
+      const qrCodeBase64 = data.point_of_interaction?.transaction_data?.qr_code_base64;
 
-      // ✅ AJUSTE AQUI: Aceitar 'pending' como sucesso para Pix
       if (data.status === 'approved') {
         toast.success("Pagamento Aprovado! 🎉");
-        onSuccess(data.id.toString());
+        onSuccess({ id: data.id.toString(), status: 'approved' });
       } else if (data.status === 'in_process' || data.status === 'pending') {
-        // 'pending' é o status padrão do Pix recém-criado
-        toast.success("Código Pix Gerado! Finalize o pagamento.");
-        // Passamos o ID para criar o pedido, mesmo pendente
-        onSuccess(data.id.toString()); 
+        toast.success("Pedido criado! Finalize o pagamento.");
+        // Passamos os dados do Pix para o pai
+        onSuccess({ 
+          id: data.id.toString(), 
+          status: data.status, 
+          qrCode, 
+          qrCodeBase64 
+        });
       } else {
-        toast.error(`Pagamento não concluído: ${data.status_detail}`);
+        toast.error(`Pagamento recusado: ${data.status_detail}`);
       }
 
     } catch (e: any) {
       console.error("❌ Erro crítico:", e);
       toast.error("Erro ao processar. Verifique os dados.");
-    } finally {
-      setProcessing(false);
     }
   };
-
-  if (processing) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 bg-muted/20 rounded-lg animate-pulse">
-        <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-        <p className="font-medium text-muted-foreground">Processando pagamento seguro...</p>
-        <p className="text-xs text-muted-foreground mt-2">Não feche esta página</p>
-      </div>
-    );
-  }
 
   return (
     <div className="w-full bg-white p-2 rounded-lg border border-border/50 shadow-sm">
@@ -107,7 +95,7 @@ const PaymentBrick = ({ amount, onSuccess, customerEmail = "test@testuser.com" }
         initialization={initialization}
         customization={customization}
         onSubmit={onSubmit}
-        onReady={() => console.log("✅ Brick de Pagamento Pronto (Crédito + Pix)")}
+        onReady={() => console.log("✅ Brick de Pagamento Pronto")}
         onError={(error) => console.error("❌ Erro no Brick:", error)}
       />
     </div>

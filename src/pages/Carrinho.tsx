@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
-import { ChefHat, Trash2, Plus, Minus, Truck, Loader2, Search, ShoppingBag, ArrowLeft, MapPin, CreditCard, Clock, MessageSquare } from "lucide-react";
+import { ChefHat, Trash2, Plus, Minus, Truck, Loader2, Search, ShoppingBag, ArrowLeft, MapPin, CreditCard, Clock, MessageSquare, CheckCircle, Copy } from "lucide-react";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
 import PaymentBrick from "@/components/payment/PaymentBrick";
@@ -53,6 +53,9 @@ const Carrinho = () => {
   const [bairro, setBairro] = useState("");
   const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
+
+  // NOVO: Estado para armazenar os dados do Pix (QR Code)
+  const [pixData, setPixData] = useState<{ qrCode: string; qrCodeBase64: string } | null>(null);
   
   const navigate = useNavigate();
 
@@ -199,10 +202,18 @@ const Carrinho = () => {
   const total = subtotal + taxaEntrega;
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantidade, 0);
 
+  // Função para copiar o código Pix para a área de transferência
+  const copyPixCode = () => {
+    if (pixData?.qrCode) {
+      navigator.clipboard.writeText(pixData.qrCode);
+      toast.success("Código Pix copiado!");
+    }
+  };
+
   // Função principal de finalização
-  // Aceita paymentId opcional (vindo do Mercado Pago)
-  const handleFinalizarPedido = async (paymentId?: string) => {
-    if (cartItems.length === 0) {
+  const handleFinalizarPedido = async (paymentData?: { id: string; status: string; qrCode?: string; qrCodeBase64?: string }) => {
+    // Se o carrinho estiver vazio E não tivermos dados de Pix (ou seja, não é o caso de "já paguei"), barra
+    if (cartItems.length === 0 && !pixData) {
       toast.error("Carrinho vazio");
       return;
     }
@@ -212,7 +223,7 @@ const Carrinho = () => {
       return;
     }
 
-    if (tipoEntrega === "delivery" && !taxaEntregaCalculada) {
+    if (tipoEntrega === "delivery" && !taxaEntregaCalculada && !pixData) {
       toast.error("Calcule o frete antes de finalizar");
       return;
     }
@@ -226,12 +237,18 @@ const Carrinho = () => {
         return;
       }
 
+      // Se já temos os dados do Pix, o usuário está na tela de sucesso e clicou em "Já paguei"
+      // Nesse caso, apenas limpamos e redirecionamos, pois o pedido já foi criado
+      if (pixData) {
+        navigate("/meus-pedidos");
+        return;
+      }
+
       const pontosGanhos = Math.floor(total);
       const enderecoCompleto = getEnderecoCompleto();
       
-      // Se veio um ID de pagamento, adicionamos à observação
-      const obsFinal = paymentId 
-        ? `${observacao ? observacao + ' | ' : ''}Pago Online (MP ID: ${paymentId})`
+      const obsFinal = paymentData?.id 
+        ? `${observacao ? observacao + ' | ' : ''}Pago Online (MP ID: ${paymentData.id})`
         : observacao;
 
       const { data: pedido, error: pedidoError } = await supabase
@@ -303,22 +320,81 @@ const Carrinho = () => {
         }
       }
 
+      // Limpa o carrinho do localStorage
       localStorage.removeItem("cart");
-      toast.success("Pedido realizado com sucesso!");
-      navigate("/meus-pedidos");
+
+      // LÓGICA DE DECISÃO: Redirecionar ou Mostrar QR Code
+      if (paymentData?.status === 'pending' && paymentData.qrCode && paymentData.qrCodeBase64) {
+        // É Pix Pendente! Salva os dados para mostrar o QR Code e esconde o resto
+        setPixData({
+          qrCode: paymentData.qrCode,
+          qrCodeBase64: paymentData.qrCodeBase64
+        });
+        setCartItems([]); // Limpa a lista visualmente para "limpar" a tela de fundo
+        toast.success("Pedido gerado! Escaneie o QR Code.");
+        setLoading(false); // Para o loading
+        // NÃO redireciona aqui, deixa o return renderizar a tela de Pix
+      } else {
+        // Cartão aprovado ou Pagamento na Entrega/Retirada -> Vai para pedidos
+        toast.success("Pedido realizado com sucesso!");
+        navigate("/meus-pedidos");
+      }
+
     } catch (error) {
       console.error(error);
       toast.error("Erro ao finalizar pedido");
-    } finally {
       setLoading(false);
     }
   };
 
   const isOnlinePayment = formaPagamento === "cartao" || formaPagamento === "pix";
 
+  // --- RENDERIZAÇÃO ESPECIAL: Tela de Sucesso do Pix ---
+  if (pixData) {
+    return (
+      <div className="min-h-screen bg-background p-4 flex items-center justify-center">
+        <Card className="w-full max-w-md text-center card-shadow-sweet animate-fade-in">
+          <CardHeader>
+            <div className="mx-auto bg-green-100 p-4 rounded-full mb-4 w-fit">
+              <CheckCircle className="h-12 w-12 text-green-600" />
+            </div>
+            <CardTitle className="text-2xl font-bold text-primary">Pedido Registrado!</CardTitle>
+            <p className="text-muted-foreground">Escaneie o QR Code para pagar via Pix</p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Imagem do QR Code */}
+            <div className="flex justify-center">
+              <img 
+                src={`data:image/png;base64,${pixData.qrCodeBase64}`} 
+                alt="QR Code Pix" 
+                className="w-64 h-64 object-contain border-2 border-dashed border-primary/30 rounded-lg p-2 bg-white shadow-sm"
+              />
+            </div>
+
+            {/* Código Copia e Cola */}
+            <div className="space-y-2">
+              <Label className="text-left block text-sm font-semibold ml-1">Pix Copia e Cola</Label>
+              <div className="flex gap-2">
+                <Input value={pixData.qrCode} readOnly className="bg-muted text-xs font-mono h-10" />
+                <Button size="icon" variant="outline" onClick={copyPixCode} className="h-10 w-10 shrink-0">
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <Button className="w-full h-12 text-lg font-bold shadow-md" onClick={() => navigate("/meus-pedidos")}>
+              Já fiz o pagamento
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // --- RENDERIZAÇÃO PADRÃO: Carrinho ---
   return (
     <div className="min-h-screen bg-background pb-32 md:pb-8">
-      {/* Mobile-first header */}
+      {/* Header */}
       <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b border-border">
         <div className="container mx-auto px-4 py-3 flex items-center gap-3">
           <Button
@@ -359,18 +435,20 @@ const Carrinho = () => {
           </Card>
         ) : (
           <div className="space-y-4">
-            {/* Cart Items - Compact mobile cards */}
+            {/* Cart Items */}
             <div className="space-y-3">
               {cartItems.map(item => (
                 <Card key={item.id} className="overflow-hidden">
                   <CardContent className="p-3 sm:p-4">
                     <div className="flex gap-3">
-                      {/* Product image placeholder */}
-                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex-shrink-0 flex items-center justify-center">
-                        <ShoppingBag className="h-6 w-6 text-primary/40" />
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden">
+                        {item.imagem_url ? (
+                           <img src={item.imagem_url} alt={item.nome} className="w-full h-full object-cover" />
+                        ) : (
+                           <ShoppingBag className="h-6 w-6 text-primary/40" />
+                        )}
                       </div>
                       
-                      {/* Product info */}
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-sm sm:text-base truncate pr-2">
                           {item.nome}
@@ -379,7 +457,6 @@ const Carrinho = () => {
                           R$ {item.preco.toFixed(2)}
                         </p>
                         
-                        {/* Quantity controls - inline on mobile */}
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex items-center gap-1.5 bg-muted/50 rounded-full p-0.5">
                             <Button
@@ -419,7 +496,7 @@ const Carrinho = () => {
               ))}
             </div>
 
-            {/* Delivery Type Selection */}
+            {/* Delivery Type */}
             <Card>
               <CardHeader className="pb-3 px-4 pt-4">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -461,7 +538,7 @@ const Carrinho = () => {
               </CardContent>
             </Card>
 
-            {/* Delivery Address - Only show when delivery is selected */}
+            {/* Delivery Address */}
             {tipoEntrega === "delivery" && (
               <Card>
                 <CardHeader className="pb-3 px-4 pt-4">
@@ -471,7 +548,6 @@ const Carrinho = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 pt-0 space-y-3">
-                  {/* CEP */}
                   <div>
                     <Label htmlFor="cep" className="text-xs text-muted-foreground">CEP</Label>
                     <div className="flex gap-2 mt-1">
@@ -504,7 +580,6 @@ const Carrinho = () => {
                     </div>
                   </div>
 
-                  {/* Street */}
                   <div>
                     <Label htmlFor="rua" className="text-xs text-muted-foreground">Rua</Label>
                     <Input
@@ -520,7 +595,6 @@ const Carrinho = () => {
                     />
                   </div>
 
-                  {/* Number and Complement - side by side */}
                   <div className="grid grid-cols-5 gap-2">
                     <div className="col-span-2">
                       <Label htmlFor="numero" className="text-xs text-muted-foreground">Número *</Label>
@@ -550,7 +624,6 @@ const Carrinho = () => {
                     </div>
                   </div>
 
-                  {/* Neighborhood */}
                   <div>
                     <Label htmlFor="bairro" className="text-xs text-muted-foreground">Bairro</Label>
                     <Input
@@ -566,7 +639,6 @@ const Carrinho = () => {
                     />
                   </div>
 
-                  {/* City and State */}
                   <div className="grid grid-cols-4 gap-2">
                     <div className="col-span-3">
                       <Label htmlFor="cidade" className="text-xs text-muted-foreground">Cidade</Label>
@@ -596,7 +668,6 @@ const Carrinho = () => {
                     </div>
                   </div>
 
-                  {/* Calculate shipping button */}
                   <Button
                     type="button"
                     variant="outline"
@@ -652,7 +723,7 @@ const Carrinho = () => {
                       htmlFor={method.value}
                       className={`flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all text-sm ${
                         formaPagamento === method.value 
-                          ? "border-primary bg-primary/10" 
+                          ? "border-primary bg-primary/10 text-primary" 
                           : "border-border hover:border-primary/50"
                       }`}
                     >
@@ -665,7 +736,7 @@ const Carrinho = () => {
               </CardContent>
             </Card>
 
-            {/* Schedule and Notes - Collapsible on mobile */}
+            {/* Observations */}
             <Card>
               <CardHeader className="pb-3 px-4 pt-4">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -702,7 +773,7 @@ const Carrinho = () => {
               </CardContent>
             </Card>
 
-            {/* Finalization Section */}
+            {/* Total and Checkout */}
             <Card className="mb-20 md:mb-0 border-t-4 border-primary">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between text-sm">
@@ -722,17 +793,16 @@ const Carrinho = () => {
 
                 {/* Conditional Payment/Finish Button */}
                 {isOnlinePayment ? (
-                  <div className="border rounded-xl p-4 bg-muted/20">
+                  <div className="border rounded-xl p-4 bg-muted/20 animate-fade-in">
                     <h3 className="font-bold mb-4 text-center text-primary flex items-center justify-center gap-2">
                       <CreditCard className="h-5 w-5" />
                       Pagamento Seguro
                     </h3>
                     <PaymentBrick 
                       amount={total} 
-                      customerEmail={`test_user_${Math.floor(Math.random() * 100000)}@test.com`}
-                      onSuccess={(paymentId) => {
-                        handleFinalizarPedido(paymentId); 
-                      }}
+                      // Passa um e-mail randomico para evitar erro de 'mesmo usuário' no teste
+                      customerEmail={`test_user_${Math.floor(Math.random() * 100000)}@test.com`} 
+                      onSuccess={handleFinalizarPedido}
                     />
                   </div>
                 ) : (
